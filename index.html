@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alliance Game</title>
+<style>
+  :root { --bg:#10141c; --card:#1a2030; --line:#2b3550; --text:#e6e9f2; --dim:#8b95b0; --accent:#4cc38a; --danger:#e5534b; --range:rgba(76,195,138,.18); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  main { max-width:1100px; margin:0 auto; padding:20px; }
+  .hidden { display:none !important; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .card h3 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); }
+  input { background:#0e121b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:9px 10px; font:inherit; width:100%; margin-bottom:10px; }
+  button { background:#27314b; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 12px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); color:#06210f; border-color:var(--accent); font-weight:600; }
+  button.danger { background:var(--danger); border-color:var(--danger); }
+  .tabs { display:flex; gap:8px; margin-bottom:14px; }
+  .tabs button.on { background:var(--accent); color:#06210f; border-color:var(--accent); }
+  #auth { max-width:380px; margin:40px auto; }
+  .err { color:var(--danger); min-height:20px; margin:4px 0 8px; }
+  .dim { color:var(--dim); }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:20px; align-items:start; }
+  @media (max-width:860px) { .layout { grid-template-columns:1fr; } }
+  #board { --n:16; display:grid; grid-template-columns:repeat(var(--n),1fr); width:min(92vw,640px); aspect-ratio:1; border:2px solid var(--line); background:#0b0f17; }
+  .cell { border:1px solid #171d2b; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:calc(min(92vw,640px) / var(--n) * .38); user-select:none; overflow:hidden; }
+  .cell.inrange { background:var(--range); }
+  .cell.player { cursor:pointer; color:#0b0f17; border-radius:6px; border-color:transparent; }
+  .cell.own { outline:3px solid #fff; outline-offset:-3px; }
+  .cell.sel { outline:3px solid var(--danger); outline-offset:-3px; }
+  #banner { margin-top:12px; font-size:17px; font-weight:600; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0; }
+  .stat b { font-size:17px; }
+  .pad { display:grid; grid-template-columns:repeat(3,48px); gap:6px; justify-content:center; margin-bottom:10px; }
+  .pad button { height:44px; font-size:18px; padding:0; }
+  .row { display:flex; gap:8px; margin-top:8px; }
+  .row input { margin:0; width:80px; }
+  .pl { display:flex; justify-content:space-between; padding:4px 8px; border-radius:6px; cursor:pointer; }
+  .pl:hover { background:#222a40; }
+  .pl.sel { background:#3a2330; }
+  .tag { font-size:12px; color:var(--accent); }
+  #log { max-height:220px; overflow:auto; font-size:13px; }
+  #log div { padding:2px 0; border-bottom:1px solid #202840; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--danger); padding:10px 16px; border-radius:8px; display:none; z-index:9; }
+  details summary { cursor:pointer; color:var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ ALLIANCE GAME</h1>
+  <div id="who" class="hidden"><span id="whoName"></span> <button id="logout">Log out</button></div>
+</header>
+<main>
+
+  <!-- LOGIN / CREATE PROFILE -->
+  <section id="auth" class="card hidden">
+    <div class="tabs">
+      <button id="tabLogin" class="on">Log in</button>
+      <button id="tabReg">Create profile</button>
+    </div>
+    <input id="aName" placeholder="Player name" maxlength="16" autocomplete="username">
+    <input id="aPass" type="password" placeholder="Password (min. 6 characters)" autocomplete="current-password">
+    <div class="err" id="aErr"></div>
+    <button class="primary" id="aGo" style="width:100%">Log in</button>
+    <p class="dim" id="aInfo" style="margin-bottom:0"></p>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="hidden">
+    <div class="card">
+      <h3>Lobby</h3>
+      <p>Waiting for players: <b id="lobbyCount"></b>. The game starts automatically when it is full.</p>
+      <div id="lobbyList"></div>
+    </div>
+    <div class="card">
+      <details>
+        <summary>Admin</summary>
+        <p class="dim">Start the game early with the players that already joined (no one else can join after that).</p>
+        <input id="adminPw" type="password" placeholder="Admin password">
+        <div class="row" style="margin:0">
+          <button class="primary" id="adminStart">Start now</button>
+          <button class="danger" id="adminReset">Reset game</button>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="hidden">
+    <div class="layout">
+      <div>
+        <div id="board"></div>
+        <div id="banner"></div>
+      </div>
+      <aside>
+        <div class="card">
+          <h3>You</h3>
+          <div class="stat"><span>Lives</span><b id="lives"></b></div>
+          <div class="stat"><span>Action points</span><b id="pts"></b></div>
+          <div class="stat"><span>Range</span><b id="rng"></b></div>
+          <div class="stat"><span>Next point in</span><b id="cd"></b></div>
+        </div>
+        <div class="card">
+          <h3>Move (1p) — arrows / WASD / Q E Z C</h3>
+          <div class="pad" id="pad"></div>
+          <div class="row" style="margin-top:0">
+            <button id="btnRange" style="flex:1"></button>
+            <button id="btnHeal" style="flex:1"></button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Target</h3>
+          <div id="tname" class="dim">Click a player on the board or in the list</div>
+          <div class="row">
+            <button id="btnAtk" class="danger"></button>
+          </div>
+          <div class="row">
+            <input id="amt" type="number" min="1" value="1">
+            <button id="btnGift">Send points</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Players alive</h3>
+          <div id="plist"></div>
+          <div id="elist" class="dim" style="margin-top:8px;font-size:13px"></div>
+        </div>
+        <div class="card">
+          <h3>Log</h3>
+          <div id="log"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  let token = localStorage.getItem('ttt_token') || '';
+  let view = null, selected = null, offset = 0, mode = 'login';
+
+  async function api(path, body) {
+    const r = await fetch(path, {
+      method: body ? 'POST' : 'GET',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Request failed');
+    return j;
+  }
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+    clearTimeout(toast.h); toast.h = setTimeout(() => { t.style.display = 'none'; }, 2500);
+  }
+  const hue = (name) => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  const fmt = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+
+  /* ---- auth ---- */
+  function setMode(m) {
+    mode = m;
+    $('tabLogin').classList.toggle('on', m === 'login');
+    $('tabReg').classList.toggle('on', m === 'reg');
+    $('aGo').textContent = m === 'login' ? 'Log in' : 'Create profile and join';
+    $('aErr').textContent = '';
+  }
+  $('tabLogin').onclick = () => setMode('login');
+  $('tabReg').onclick = () => setMode('reg');
+  async function submitAuth() {
+    try {
+      const r = await api(mode === 'login' ? '/api/login' : '/api/register', { name: $('aName').value, password: $('aPass').value });
+      token = r.token; localStorage.setItem('ttt_token', token);
+      $('aPass').value = '';
+      await refresh();
+    } catch (e) { $('aErr').textContent = e.message; }
+  }
+  $('aGo').onclick = submitAuth;
+  $('aPass').onkeydown = (e) => { if (e.key === 'Enter') submitAuth(); };
+  $('logout').onclick = () => { token = ''; localStorage.removeItem('ttt_token'); refresh(); };
+
+  /* ---- admin ---- */
+  $('adminStart').onclick = async () => {
+    try { await api('/api/admin/start', { password: $('adminPw').value }); await refresh(); } catch (e) { toast(e.message); }
+  };
+  $('adminReset').onclick = async () => {
+    if (!confirm('Delete all players and restart the game?')) return;
+    try { await api('/api/admin/reset', { password: $('adminPw').value }); await refresh(); } catch (e) { toast(e.message); }
+  };
+
+  /* ---- game actions ---- */
+  async function doAction(body) {
+    try { view = await api('/api/action', body); render(); } catch (e) { toast(e.message); }
+  }
+  const dirs = [[-1,-1,'↖'],[0,-1,'↑'],[1,-1,'↗'],[-1,0,'←'],[0,0,'•'],[1,0,'→'],[-1,1,'↙'],[0,1,'↓'],[1,1,'↘']];
+  $('pad').innerHTML = dirs.map((d) => d[0] === 0 && d[1] === 0 ? '<span></span>' : '<button data-dx="' + d[0] + '" data-dy="' + d[1] + '">' + d[2] + '</button>').join('');
+  $('pad').onclick = (e) => { const b = e.target.closest('button'); if (b) doAction({ type: 'move', dx: +b.dataset.dx, dy: +b.dataset.dy }); };
+  $('btnRange').onclick = () => doAction({ type: 'range' });
+  $('btnHeal').onclick = () => doAction({ type: 'heal' });
+  $('btnAtk').onclick = () => selected && doAction({ type: 'attack', target: selected });
+  $('btnGift').onclick = () => selected && doAction({ type: 'gift', target: selected, amount: parseInt($('amt').value, 10) });
+  const keys = { ArrowUp:[0,-1], w:[0,-1], ArrowDown:[0,1], s:[0,1], ArrowLeft:[-1,0], a:[-1,0], ArrowRight:[1,0], d:[1,0], q:[-1,-1], e:[1,-1], z:[-1,1], c:[1,1] };
+  document.addEventListener('keydown', (e) => {
+    if (/INPUT|TEXTAREA/.test(document.activeElement.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const d = keys[e.key]; if (!d || $('game').classList.contains('hidden')) return;
+    e.preventDefault(); doAction({ type: 'move', dx: d[0], dy: d[1] });
+  });
+  $('board').onclick = (e) => { const c = e.target.closest('.player'); if (c && !c.classList.contains('own')) { selected = c.dataset.name; render(); } };
+  $('plist').onclick = (e) => { const c = e.target.closest('.pl'); if (c && c.dataset.name !== view.me.name) { selected = c.dataset.name; render(); } };
+
+  /* ---- rendering ---- */
+  function show(id) { ['auth', 'lobby', 'game'].forEach((s) => $(s).classList.toggle('hidden', s !== id)); }
+
+  function render() {
+    if (!view) return;
+    if (token && !view.me) { token = ''; localStorage.removeItem('ttt_token'); }
+    const me = view.me, cfg = view.config;
+    $('who').classList.toggle('hidden', !me);
+    if (me) $('whoName').textContent = me.name;
+
+    if (!me) {
+      show('auth');
+      $('aInfo').textContent = view.phase === 'lobby'
+        ? 'Players joined: ' + view.joined + '/' + cfg.maxPlayers
+        : 'The game is already running. Only registered players can log in.';
+      return;
+    }
+    if (view.phase === 'lobby') {
+      show('lobby');
+      $('lobbyCount').textContent = view.joined + '/' + cfg.maxPlayers;
+      $('lobbyList').innerHTML = view.lobby.map((n) => '<div>• ' + esc(n) + (n === me.name ? ' <span class="tag">(you)</span>' : '') + '</div>').join('');
+      return;
+    }
+    show('game');
+    const n = cfg.gridSize;
+    const byPos = {}; view.players.forEach((t) => { byPos[t.x + ',' + t.y] = t; });
+    if (selected && (!view.players.some((t) => t.name === selected) || selected === me.name)) selected = null;
+    let html = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const t = byPos[x + ',' + y];
+      let cls = 'cell', style = '', attr = '';
+      if (me.alive && !(me.x === x && me.y === y) && cheb(me, { x, y }) <= me.range) cls += ' inrange';
+      if (t) {
+        cls += ' player' + (t.name === me.name ? ' own' : '') + (t.name === selected ? ' sel' : '');
+        style = 'background:hsl(' + hue(t.name) + ',65%,60%)';
+        attr = ' data-name="' + esc(t.name) + '" title="' + esc(t.name) + '"';
+      }
+      html += '<div class="' + cls + '" style="' + style + '"' + attr + '>' + (t ? esc(t.name.slice(0, 2).toUpperCase()) : '') + '</div>';
+    }
+    const board = $('board'); board.style.setProperty('--n', n); board.innerHTML = html;
+
+    $('lives').textContent = '❤'.repeat(Math.max(0, me.lives)) + '🖤'.repeat(Math.max(0, cfg.lives - me.lives));
+    $('pts').textContent = me.points; $('rng').textContent = me.range;
+    const playing = view.phase === 'playing' && me.alive;
+    $('btnRange').textContent = 'Extend range (' + cfg.costs.range + 'p)';
+    $('btnHeal').textContent = 'Heal 1 life (' + cfg.costs.heal + 'p)';
+    $('btnAtk').textContent = 'Attack (' + cfg.costs.attack + 'p)';
+    $('btnRange').disabled = !playing || me.points < cfg.costs.range;
+    $('btnHeal').disabled = !playing || me.points < cfg.costs.heal || me.lives >= cfg.lives;
+    $('pad').querySelectorAll('button').forEach((b) => { b.disabled = !playing || me.points < cfg.costs.move; });
+
+    const tgt = view.players.find((t) => t.name === selected);
+    const inRange = tgt && me.alive && cheb(me, tgt) <= me.range;
+    $('tname').innerHTML = tgt ? '<b>' + esc(tgt.name) + '</b> — distance ' + cheb(me, tgt) + (inRange ? ' <span class="tag">in range</span>' : ' <span class="dim">(out of range)</span>') : 'Click a player on the board or in the list';
+    $('btnAtk').disabled = !playing || !inRange || me.points < cfg.costs.attack;
+    $('btnGift').disabled = !playing || !inRange || me.points < 1;
+
+    $('plist').innerHTML = view.players.map((t) => {
+      const r = t.name !== me.name && me.alive && cheb(me, t) <= me.range;
+      return '<div class="pl' + (t.name === selected ? ' sel' : '') + '" data-name="' + esc(t.name) + '"><span><span style="color:hsl(' + hue(t.name) + ',65%,60%)">■</span> ' + esc(t.name) + (t.name === me.name ? ' <span class="tag">(you)</span>' : '') + '</span><span class="tag">' + (r ? 'in range' : '') + '</span></div>';
+    }).join('');
+    $('elist').textContent = view.eliminated.length ? 'Eliminated: ' + view.eliminated.join(', ') : '';
+    $('log').innerHTML = view.events.slice().reverse().map((e) => '<div><span class="dim">' + new Date(e.t).toLocaleTimeString() + '</span> ' + esc(e.msg) + '</div>').join('');
+
+    let banner = '';
+    if (view.phase === 'finished') banner = view.winner === me.name ? '🏆 You won the game!' : '🏁 Game over. Winner: ' + esc(view.winner || 'nobody');
+    else if (!me.alive) banner = '💀 You were eliminated. You can keep watching.';
+    $('banner').innerHTML = banner;
+    updateCountdown();
+  }
+
+  function updateCountdown() {
+    if (!view || view.phase !== 'playing' || !view.me || !view.me.alive) { $('cd').textContent = '—'; return; }
+    $('cd').textContent = fmt((view.nextTick - (Date.now() + offset)) / 1000);
+  }
+  setInterval(updateCountdown, 1000);
+
+  async function refresh() {
+    try {
+      view = await api('/api/state');
+      offset = view.serverTime - Date.now();
+      render();
+    } catch (e) { /* server unreachable, try again on next poll */ }
+  }
+  setMode('login');
+  refresh();
+  setInterval(refresh, 2500);
+})();
+</script>
+</body>
+</html>

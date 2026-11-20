@@ -1,0 +1,13 @@
+{
+  "name": "alliance-game",
+  "version": "1.0.0",
+  "description": "Online Alliance game (no dependencies)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
